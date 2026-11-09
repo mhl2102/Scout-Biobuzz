@@ -33,10 +33,12 @@ Não há servidor para manter, projeto no Google Cloud, chave de API nem banco d
 ## O que muda em relação ao site atual
 
 **Fica igual**
-- Tela de login: a pessoa digita o nome e o site lembra.
-- Senha da equipe: pedida uma vez no primeiro envio e lembrada no aparelho.
-- Formulário de partida guiado em etapas, com os mesmos campos, botões grandes e validação de campos obrigatórios.
-- Fila offline: se o envio falhar, a partida fica guardada no celular e é reenviada automaticamente.
+- Senha da equipe: pedida **na primeira tela, antes do nome**, conferida na hora pelo Apps Script e lembrada no aparelho (não é pedida de novo). Sem internet no primeiro acesso, é aceita provisoriamente e conferida quando a conexão voltar; se estiver errada, o site pede de novo sem perder partidas nem rascunho.
+- Nome do scouter: pedido logo depois da senha e lembrado.
+- Formulário de partida guiado em etapas, com botões grandes. A validação é **por etapa**: ao tocar em Próximo, os campos obrigatórios vazios ficam marcados em vermelho e o site não avança.
+- Contadores (bolas, tips, GARDEN) começam em 0, e 0 é uma resposta válida.
+- Envio automático: ao salvar, ao abrir o site, ao voltar a conexão e com novas tentativas sozinhas (4 s, 8 s, 16 s, depois a cada 30 s). O topo mostra só o estado da conexão e das partidas guardadas.
+- Feito para celular: etapas numa barra fixa no rodapé (timeline navegável), com Próximo em verde e Voltar em vermelho. A barra some enquanto o teclado está aberto.
 
 **Sai do site** (passa a ser feito na planilha ou deixa de existir)
 - Pit scout.
@@ -46,15 +48,17 @@ Não há servidor para manter, projeto no Google Cloud, chave de API nem banco d
 - Exportar CSV/JSON (a planilha já é o arquivo).
 
 **Novo**
-- Indicador simples de envio: "Tudo enviado", "Aguardando envio (N)" e botão "Enviar agora".
+- Aviso de conexão: "Tudo enviado" ou "Sem conexão: N partida(s) guardada(s) neste aparelho", com um link discreto "Tentar agora".
+- **Mapa de tiro**: no lugar do texto livre, uma grade 6×6 sobre a imagem da arena (`assets/arena.png`). Toque marca a célula, segundo toque faz dela a principal (★), terceiro desmarca. Robô da Aliança Azul vê a arena girada 180°, então o código gravado é sempre do ponto de vista da própria aliança (ela à esquerda).
+- **Placar final da aliança** (opcional), digitado no fim da partida. Alimenta o OPR e a sinergia na planilha.
 - O scout escolhe o evento (Seletiva RS ou Evento teste) e só consegue escolher equipes cadastradas na aba Equipes daquele evento, num seletor com busca por número ou nome.
 - Aviso de duplicata: antes de salvar (mesma equipe, partida e tipo já enviados do aparelho) e depois do envio (o script avisa se outro scout já registrou).
 
 ## Fluxo de uso
 
-1. O scout abre o link, digita o nome (só na primeira vez).
+1. O scout abre o link e digita a senha da equipe e depois o nome (só na primeira vez).
 2. Preenche a partida nas etapas do formulário e toca em salvar.
-3. O site envia para o Apps Script. Na primeira vez pede a senha da equipe.
+3. O site envia sozinho para o Apps Script.
 4. A linha aparece na aba **Partidas** em segundos, e as abas de análise se atualizam sozinhas.
 5. Sem sinal, a partida fica na fila e é enviada quando a conexão voltar.
 
@@ -67,8 +71,14 @@ Não há servidor para manter, projeto no Google Cloud, chave de API nem banco d
 | **Ranking** | Médias por equipe e pontuação estimada, ordenadas | fórmulas |
 | **Comparar** | Até 4 equipes lado a lado, escolhidas em listas suspensas | fórmulas |
 | **Gráficos** | Barras por equipe (SPARKLINE) a partir do Ranking: pontuação estimada e bolas auto/teleop | fórmulas |
-| **Config** | Valores de pontuação usados no cálculo | a equipe, à mão |
-| **_calc** (oculta) | Métricas por equipe que alimentam Ranking, Comparar e Gráficos | fórmulas |
+| **Mapa de tiro** | Para uma equipe: % das partidas em que atirou de cada célula e em que ela foi a principal | fórmulas |
+| **Placar real** | Uma linha por aliança-partida com placar; OPR por equipe (regularizado pela média do scout) | fórmulas |
+| **Config** | Valores de pontuação; pesos da sinergia e λ do OPR (linhas 10–15) | a equipe, à mão |
+| **_calc**, **_calcCmp**, **_tiro** (ocultas) | Métricas por equipe que alimentam Ranking, Comparar, Gráficos e Mapa de tiro | fórmulas |
+
+O Comparar também mostra o perfil de estratégia de cada equipe e a **sinergia da aliança**: desconta da soma das médias os conflitos de posição inicial, de fonte de coleta no auto e de zona de tiro.
+
+**Layout de referência.** Parte das abas de análise (filtros por tipo de partida, `_calcCmp`, Mapa de tiro, Placar real, sinergia) foi montada direto na planilha de teste. Ela é a referência: para levar o layout às outras planilhas, rode `copiarLayoutDoTeste()` no editor do Apps Script. Ele recria as abas de análise a partir da planilha de teste e não toca em Partidas (só acrescenta o cabeçalho `placarAlianca` em AD) nem em Equipes. O `setup()` só monta o layout básico em planilhas novas e pula as que já têm `_calcCmp`, para não apagar nada.
 
 Cada evento tem a sua planilha com essa mesma estrutura, então o Evento teste nunca mistura dados com a Seletiva RS:
 
@@ -95,8 +105,10 @@ Mesmo modelo de dados do site atual, sem os campos de versão e edição.
 | `aBalls`, `aTips` | autônomo: bolas na HIVE e tips |
 | `tBalls`, `tTips`, `tGarden` | teleop: bolas na HIVE, tips e elementos no GARDEN |
 | `tFlower`, `tPark`, `tBroke`, `tAcc` | teleop: flor, PARK, pifou, precisão |
-| `shootSpeed`, `robotSpeed`, `shootSpot`, `notes` | observações |
-| `pontosEstimados` | coluna de fórmula (não enviada pelo site) |
+| `shootSpeed`, `robotSpeed`, `notes` | observações |
+| `shootSpot` | mapa de tiro: células `A1`…`F6` separadas por `;`, a principal com `*` (ex.: `C3*;C4`). Colunas A–F da esquerda para a direita, linhas 1–6 de cima para baixo, sempre com a aliança do robô à esquerda. Registros antigos em texto livre ficam, mas o mapa os ignora |
+| `pontosEstimados` (AC) | coluna de fórmula (ARRAYFORMULA em AC1). Nada é gravado nela |
+| `placarAlianca` (AD) | placar final da aliança, 0–999 ou vazio. Gravado à parte, depois de A..AB, para não tocar na fórmula de AC |
 
 Sim e Não ficam como texto. Os pontos estimados são calculados na planilha com os valores da aba Config: LEAVE 3, PARK 5 no autônomo e 5 no fim, HIVE TIP 20, GARDEN 1 por elemento. Bolas na HIVE não pontuam; são só dado estatístico.
 
@@ -107,6 +119,7 @@ O site envia em `text/plain` com JSON no corpo, para evitar a checagem prévia d
 | Chamada | Corpo / parâmetros | Resposta |
 |---|---|---|
 | `POST` | `{ "key": "<senha da equipe>", "row": { ...campos... } }` | `{ "ok": true, "id": "...", "status": "created" \| "updated", "dup": null \| { "scouter": "...", "criadoEm": "..." } }` |
+| `POST` | `{ "key": "<senha>", "action": "auth" }` | `{ "ok": true, "auth": true }` ou `bad_key`. Usado na primeira tela. (Um script sem essa ação responde `bad_row` para senha certa; o site aceita as duas.) |
 | `GET ?action=teams` | — | `{ "ok": true, "events": [{ "name": "Seletiva RS", "teams": [{ "team": 12345, "name": "..." }] }] }` |
 | `GET ?action=ping` | — | `{ "ok": true }` |
 
@@ -114,7 +127,7 @@ Erros: `{ "ok": false, "error": "bad_key" | "bad_row" | "bad_event" | "bad_team"
 
 Regras no script:
 - **Evento → planilha**: o campo `origin` escolhe a planilha (constante `EVENTS` no `Code.gs`).
-- **Validação**: campos obrigatórios, valores das listas e equipe existente na aba Equipes do evento.
+- **Validação**: campos obrigatórios, valores das listas, equipe existente na aba Equipes do evento, `shootSpot` no formato do mapa (no máximo uma principal; o script normaliza para principal primeiro e o resto em ordem alfabética) e `placarAlianca` inteiro de 0 a 999 ou vazio.
 - **Upsert pelo `id`**: se a linha já existe, é atualizada; senão, é acrescentada no fim.
 - **Trava** (`LockService`) para envios simultâneos de vários celulares.
 - **Senha da equipe** guardada nas propriedades do script, nunca no código do site.
@@ -125,6 +138,7 @@ Regras no script:
 ```
 index.html                  o site (login + formulário)
 config.js                   URL do Apps Script e lista de eventos
+assets/arena.png            arena vista de cima, recortada no campo (6×6 tiles), usada no mapa de tiro e na aba Mapa de tiro
 apps-script/Code.gs         código do Apps Script (cópia de referência; ele roda no Google)
 apps-script/test/           testes locais: mock-test.js (script) e e2e.js (site + script, Playwright)
 README.md                   este arquivo

@@ -105,3 +105,34 @@ Plano de execução do clone descrito no [`README.md`](README.md). Código escri
 ## Plano B no dia
 
 Se o Apps Script ou o Google ficarem fora do ar, as partidas continuam na fila dos celulares e são enviadas quando ele voltar. Se um celular falhar de vez, o scout anota no papel e alguém digita direto na aba Partidas depois.
+
+## Refinamentos (09/11/2026, rodada 2)
+
+| Pedido | Como ficou |
+|---|---|
+| Senha só uma vez, antes do nome | Primeira tela pede a senha e confere no servidor (`action: 'auth'`). Fica salva no aparelho. Offline: aceita provisoriamente e confere quando a conexão volta |
+| Envio automático | Envia ao salvar, ao abrir, ao voltar a conexão, ao voltar para o app e com novas tentativas (4 s → 30 s). O botão "Enviar agora" virou aviso de conexão com link "Tentar agora" |
+| Validação por seção | Próximo e a timeline só avançam com a etapa completa; campos vazios ficam em vermelho |
+| Cores | Próximo/Salvar verde, Voltar vermelho |
+| Zero como resposta | Contadores começam em 0 e 0 é válido. Número da partida continua precisando ser 1 ou mais |
+| Timeline no rodapé | Barra fixa inferior com os botões e as 4 etapas, navegável; some com o teclado aberto |
+
+## Mapa de tiro, placar da aliança e sinergia (09/11/2026, rodada 3)
+
+Decisões com o Vinícius: fim de jogo (PARK na LOADING ZONE) não é conflito; os conflitos considerados são posição inicial (HIVE alta/baixa), fonte de coleta no auto (Chão/Flor) e sobreposição das zonas de tiro; o placar é digitado à mão no fim da partida.
+
+| Item | Como ficou |
+|---|---|
+| Mapa de tiro | Grade 6×6 sobre `assets/arena.png` (recortada no campo para a grade bater com os tiles). Toque: marcada → principal (★) → desmarcada. Azul vê a arena girada 180°; os rótulos não giram. Obrigatório, pelo menos 1 célula |
+| `placarAlianca` | Campo opcional no passo Final, só dígitos (até 3). Gravado em AD, separado de A..AB |
+| Code.gs | Valida `shootSpot` (regex e no máximo um `*`) e `placarAlianca`; `limparEventoTeste()` limpa AD; `setup()` não mexe em planilha com `_calcCmp`; `copiarLayoutDoTeste()` leva o layout da planilha de teste para a produção |
+| Planilha | Config 10–15, `_calcCmp` T:X, `_calc` S (OPR), Ranking com OPR, Comparar 26–48 (perfil e sinergia), abas Mapa de tiro, Placar real e `_tiro`: montados direto na planilha de teste (fórmulas no handoff `scout-mapa-sinergia-handoff.md`) |
+
+Para publicar, nesta ordem:
+1. Garantir que os celulares estão com "Tudo enviado" (partidas antigas na fila com texto livre em `shootSpot` seriam recusadas pelo script novo).
+2. Colar o `Code.gs` novo no editor e em Implantar > Gerenciar implantações > lápis > Versão: nova versão (a URL não muda).
+3. Fazer o merge no GitHub (site e `assets/arena.png` no ar).
+4. Na planilha de teste: enviar 4 registros de uma mesma partida (2 Azul, 2 Vermelha) com mapa e placar e conferir Placar real, Mapa de tiro e Comparar.
+5. Rodar `copiarLayoutDoTeste()` para levar o layout à produção. Na primeira abertura da aba Mapa de tiro, a planilha pode pedir "Permitir acesso" para a imagem.
+6. Calibrar os pesos de Config!B11:B13 depois de 15–20 alianças com placar (seção 5 do handoff).
+
