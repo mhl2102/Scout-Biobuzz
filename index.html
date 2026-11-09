@@ -120,6 +120,23 @@ label{display:block;font-weight:600;font-size:15px;margin:12px 0 6px}
 details summary{cursor:pointer;font-weight:700;color:var(--acs);min-height:28px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tb,24px) + env(safe-area-inset-bottom,0px));background:var(--okb);color:#fff;padding:10px 16px;border-radius:12px;font-weight:700;z-index:60;max-width:90%;text-align:center}
 .toast.bad{background:var(--red)}
+/* mapa de tiro 6x6 */
+.map{display:grid;grid-template-columns:20px 1fr;grid-template-rows:20px auto;gap:4px;margin-top:4px}
+.mtop{grid-column:2;display:grid;grid-template-columns:repeat(6,1fr)}
+.mside{grid-row:2;display:grid;grid-template-rows:repeat(6,1fr)}
+.mtop span,.mside span{display:flex;align-items:center;justify-content:center;font:700 13px/1 "Barlow Semi Condensed",Barlow,system-ui,sans-serif;color:var(--mut)}
+.mboard{grid-row:2;grid-column:2;position:relative;border-radius:10px;overflow:hidden;background:#77777c;border:1px solid var(--ln)}
+.mboard::before{content:"";display:block;padding-top:100%}
+.mimg{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;user-select:none;-webkit-user-select:none}
+.mboard.blue .mimg{transform:rotate(180deg)}
+.mgrid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr)}
+.mc{border:0;border-right:1px solid rgba(255,255,255,.4);border-bottom:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;padding:0;margin:0;min-width:0;min-height:0;font-size:22px;line-height:1;-webkit-tap-highlight-color:transparent}
+.mc:nth-child(6n){border-right:0}.mc:nth-child(n+31){border-bottom:0}
+.mc.on{background:rgba(139,61,255,.45)}
+.mc.main{background:rgba(139,61,255,.9);box-shadow:inset 0 0 0 2px #fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.msum{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;font-size:14px;min-height:42px}
+.msum b{color:var(--acs)}
+.fld.miss .mboard{border:2px solid var(--red)}
 </style>
 </head>
 <body>
@@ -150,7 +167,16 @@ const STEPS=['Partida','Autônomo','Teleop','Final'];
 const DEF_EVENT=String(CFG.defaultEvent||'');
 const CFG_EVENTS=Array.isArray(CFG.events)?CFG.events.map(String):[];
 const cfgOk=()=>typeof CFG.scriptUrl==='string'&&/^https?:\/\//.test(CFG.scriptUrl)&&CFG.scriptUrl.indexOf('COLE_AQUI')<0;
-const FIELDS=['id','criadoEm','scouter','match','team','origin','type','alliance','aStart','aHas','aLeave','aPark','aCollect','aAcc','aBalls','aTips','tBalls','tTips','tGarden','tFlower','tPark','tBroke','tAcc','shootSpeed','robotSpeed','shootSpot','notes'];
+const FIELDS=['id','criadoEm','scouter','match','team','origin','type','alliance','aStart','aHas','aLeave','aPark','aCollect','aAcc','aBalls','aTips','tBalls','tTips','tGarden','tFlower','tPark','tBroke','tAcc','shootSpeed','robotSpeed','shootSpot','notes','placarAlianca'];
+/* mapa de tiro: células A1..F6 (colunas A-F da esquerda para a direita, linhas 1-6 de cima para baixo),
+   sempre vistas com a aliança do robô à esquerda; "*" marca a principal. Ex.: C3*;C4 */
+const SPOT_RE=/^[A-F][1-6]\*?(;[A-F][1-6]\*?)*$/,MCOLS='ABCDEF';
+function spotParse(v){
+ const s=String(v==null?'':v).replace(/\s+/g,'').toUpperCase(),o={cells:[],main:''};
+ if(!SPOT_RE.test(s)||(s.match(/\*/g)||[]).length>1)return o;
+ s.split(';').forEach(c=>{const k=c.slice(0,2);if(o.cells.indexOf(k)<0)o.cells.push(k);if(c.slice(-1)==='*')o.main=k});
+ return o}
+const spotStr=o=>(o.main?[o.main+'*']:[]).concat(o.cells.filter(c=>c!==o.main).sort()).join(';');
 const ROW_ERR={bad_row:'dados da partida inválidos',bad_event:'evento não reconhecido pelo servidor',bad_team:'equipe não cadastrada no evento'};
 
 /* ===== estado ===== */
@@ -163,9 +189,11 @@ const KEY=()=>lsGet('bb_key','');
 const keyChecked=()=>lsGet('bb_key_ok','1')==='1';
 const buzz=p=>{try{if(navigator.vibrate)navigator.vibrate(p||[35,40,35])}catch(e){}};
 const CNTS=['aBalls','tBalls','aTips','tTips','tGarden'];
-function blank(){return{id:uid(),match:'',team:'',origin:lsGet('bb_origin',DEF_EVENT),type:lsGet('bb_type',''),alliance:'',aStart:'',aHas:'',aLeave:'',aBalls:0,aTips:0,aCollect:'',aPark:'',aAcc:'',tBalls:0,tTips:0,tGarden:0,tFlower:'',tPark:'',tBroke:'',tAcc:'',shootSpeed:'',robotSpeed:'',shootSpot:'',notes:''}}
+function blank(){return{id:uid(),match:'',team:'',origin:lsGet('bb_origin',DEF_EVENT),type:lsGet('bb_type',''),alliance:'',aStart:'',aHas:'',aLeave:'',aBalls:0,aTips:0,aCollect:'',aPark:'',aAcc:'',tBalls:0,tTips:0,tGarden:0,tFlower:'',tPark:'',tBroke:'',tAcc:'',shootSpeed:'',robotSpeed:'',shootSpot:'',notes:'',placarAlianca:''}}
 const ST={f:Object.assign(blank(),jget('bb_draft',{}))};
 CNTS.forEach(k=>{if(!has(ST.f[k])||!isFinite(+ST.f[k]))ST.f[k]=0});
+if(!spotParse(ST.f.shootSpot).cells.length)ST.f.shootSpot='';
+if(!/^\d{0,3}$/.test(String(ST.f.placarAlianca==null?'':ST.f.placarAlianca)))ST.f.placarAlianca='';
 if(!ST.f.id||sent.some(x=>x.id===ST.f.id)||outbox.some(o=>o.id===ST.f.id))ST.f.id=uid();
 let draftT=0;
 const draft=()=>{clearTimeout(draftT);draftT=setTimeout(()=>lsSet('bb_draft',JSON.stringify(ST.f)),350)};
@@ -306,7 +334,21 @@ const sig=n=>'<svg width="24" height="18" viewBox="0 0 24 18" aria-hidden="true"
 const lab=(ic,t,req,hint)=>'<div class="lb">'+(ic?ico(ic,20):'')+'<span>'+t+(req?' <span class="req" title="obrigatório">*</span>':'')+'</span></div>'+(hint?'<div class="hint">'+hint+'</div>':'');
 /* campo com destaque quando a etapa foi conferida e ele ficou sem resposta */
 const isMiss=k=>!!S.shown[S.step]&&stepMissing(S.step).some(r=>r[1]===k);
-const fld=(k,ic,t,req,hint,ctl)=>{const m=req&&isMiss(k);return '<div class="fld'+(m?' miss':'')+'" data-f="'+k+'">'+lab(ic,t,req,hint)+ctl+(m?'<div class="need">'+(k==='match'?'Informe o número da partida (1 ou mais)':'Responda este campo')+'</div>':'')+'</div>'};
+const NEED={match:'Informe o número da partida (1 ou mais)',shootSpot:'Marque pelo menos uma célula no mapa'};
+const fld=(k,ic,t,req,hint,ctl)=>{const m=req&&isMiss(k);return '<div class="fld'+(m?' miss':'')+'" data-f="'+k+'">'+lab(ic,t,req,hint)+ctl+(m?'<div class="need">'+(NEED[k]||'Responda este campo')+'</div>':'')+'</div>'};
+function mapH(){
+ const f=ST.f,sp=spotParse(f.shootSpot),blue=f.alliance==='Azul';
+ let cells='';
+ for(let r=1;r<=6;r++)for(let c=0;c<6;c++){
+  const k=MCOLS[c]+r,on=sp.cells.indexOf(k)>=0,mn=sp.main===k;
+  cells+='<button type="button" class="mc'+(mn?' main':on?' on':'')+'" data-act="cell" data-v="'+k+'" aria-pressed="'+on+'" aria-label="'+k+(mn?', principal':on?', marcada':'')+'">'+(mn?'★':'')+'</button>'}
+ const rest=sp.cells.filter(c=>c!==sp.main).sort();
+ const sum=!sp.cells.length?'<span class="mut">Nenhuma célula marcada</span>'
+  :'<span>'+(sp.main?'Principal: <b>'+sp.main+'</b>':'<span class="mut">Sem principal</span>')+(rest.length?' · também: '+rest.join(', '):'')+'</span>';
+ return '<div class="map"><div class="mtop" aria-hidden="true">'+[...MCOLS].map(x=>'<span>'+x+'</span>').join('')+'</div>'
+  +'<div class="mside" aria-hidden="true">'+[1,2,3,4,5,6].map(x=>'<span>'+x+'</span>').join('')+'</div>'
+  +'<div class="mboard'+(blue?' blue':'')+'" role="group" aria-label="Mapa da arena, 6 por 6"><img class="mimg" src="assets/arena.png" alt="" draggable="false"><div class="mgrid">'+cells+'</div></div></div>'
+  +'<div class="msum">'+sum+(sp.cells.length?'<button type="button" class="btn s" data-act="spotClear">Limpar</button>':'')+'</div>'}
 function tiles(k,opts,kind,cols){
  const f=ST.f;
  const cls=o=>kind==='yn'?(o==='Sim'?'yes':'no'):kind==='ally'?(o==='Vermelha'?'red':'blue'):'';
@@ -342,11 +384,12 @@ function statusBar(){
 function reqList(){
  const f=ST.f,r=[[0,'origin','Evento'],[0,'match','Número da partida'],[0,'team','Equipe'],[0,'type','Tipo de partida'],[0,'alliance','Cor da aliança'],[1,'aStart','Local de saída'],[1,'aHas','Teve autônomo?']];
  if(f.aHas==='Sim')r.push([1,'aLeave','Saiu da base?'],[1,'aBalls','Bolas na HIVE (autônomo)'],[1,'aCollect','Coleta'],[1,'aPark','Fez base?'],[1,'aAcc','Precisão (autônomo)']);
- r.push([2,'tBalls','Bolas na HIVE (teleop)'],[2,'tFlower','Pontuou na flor?'],[2,'tPark','Fez base? (teleop)'],[2,'tBroke','Robô pifou?'],[2,'tAcc','Precisão (teleop)'],[3,'shootSpeed','Tiro das bolas'],[3,'robotSpeed','Velocidade do robô'],[3,'shootSpot','Local de preferência de tiro']);
+ r.push([2,'tBalls','Bolas na HIVE (teleop)'],[2,'tFlower','Pontuou na flor?'],[2,'tPark','Fez base? (teleop)'],[2,'tBroke','Robô pifou?'],[2,'tAcc','Precisão (teleop)'],[3,'shootSpeed','Tiro das bolas'],[3,'robotSpeed','Velocidade do robô'],[3,'shootSpot','Mapa de tiro']);
  return r}
 /* 0 é resposta válida nos contadores; só o número da partida precisa ser 1 ou mais */
 const missing=()=>reqList().filter(r=>{const v=ST.f[r[1]];
  if(r[1]==='match')return !(+v>=1&&Math.floor(+v)===+v);
+ if(r[1]==='shootSpot')return !spotParse(v).cells.length;
  return String(v==null?'':v).trim()===''});
 const stepMissing=i=>missing().filter(r=>r[0]===i);
 const firstMissing=upto=>{for(let i=0;i<=upto;i++)if(stepMissing(i).length)return i;return -1};
@@ -407,7 +450,8 @@ function stepBody(i){
   +fld('tBroke','warn','Robô pifou?',1,'',tiles('tBroke',SN,'yn',2))
   +fld('tAcc','target','Precisão aproximada',1,'',tiles('tAcc',ACC,'acc',3));
  return fld('shootSpeed','speed','Tiro das bolas',1,'',tiles('shootSpeed',SPD,'spd',3))+fld('robotSpeed','speed','Velocidade do robô',1,'',tiles('robotSpeed',SPD,'spd',3))
-  +fld('shootSpot','target','Local de preferência de tiro',1,'',inpH('shootSpot','enterkeyhint="done" placeholder="Ex.: perto da HIVE, zona central…"'))
+  +fld('shootSpot','target','Onde o robô atira',1,'Toque onde o robô atira. Toque de novo para marcar a posição principal (★); um terceiro toque desmarca. '+(f.alliance?'Arena vista com a Aliança <b>'+esc(f.alliance)+'</b> à esquerda.':'Escolha a cor da aliança na etapa Partida.'),mapH())
+  +fld('placarAlianca','flag','Placar final da aliança (opcional)',0,'Placar que apareceu no telão para a sua aliança no fim da partida. Se as faltas aparecerem separadas, prefira o total sem as faltas cometidas pela aliança adversária.',inpH('placarAlianca','type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" enterkeyhint="done" placeholder="Ex.: 142"'))
   +fld('notes','note','Outras observações (opcional)',0,'','<textarea data-m="f" data-k="notes" rows="3">'+esc(f.notes)+'</textarea>')}
 
 /* ===== seletor de equipe ===== */
@@ -431,7 +475,8 @@ function buildRec(){
  ['match','team'].forEach(k=>{m[k]=+f[k]});
  ['aBalls','tBalls','aTips','tTips','tGarden'].forEach(k=>{m[k]=has(f[k])?+f[k]:0});
  if(f.aHas!=='Sim'){m.aLeave='Não';m.aBalls=0;m.aTips=0;m.aCollect='Não coletou';m.aPark='Não';m.aAcc=''}
- m.shootSpot=String(f.shootSpot).trim();m.notes=String(f.notes||'').trim();return m}
+ m.shootSpot=spotStr(spotParse(f.shootSpot));m.notes=String(f.notes||'').trim();
+ const pl=String(f.placarAlianca==null?'':f.placarAlianca).trim();m.placarAlianca=/^\d{1,3}$/.test(pl)?+pl:'';return m}
 function localDup(){
  const f=ST.f,same=r=>r&&r.origin===f.origin&&r.type===f.type&&+r.match===+f.match&&+r.team===+f.team;
  return sent.some(s=>s.id!==f.id&&same(s))||outbox.some(o=>o.id!==f.id&&same(o.row))}
@@ -474,6 +519,14 @@ const ACT={
   if(d.k==='origin')setOrigin(d.v);
   else{f[d.k]=f[d.k]===d.v?'':d.v;if(d.k==='type')lsSet('bb_type',f[d.k])}
   draft();render()},
+ /* desmarcada → marcada → principal → desmarcada; nova principal devolve a anterior para marcada */
+ cell(b,d){
+  const sp=spotParse(ST.f.shootSpot),k=d.v,i=sp.cells.indexOf(k);
+  if(i<0)sp.cells.push(k);
+  else if(sp.main!==k)sp.main=k;
+  else{sp.cells.splice(i,1);sp.main=''}
+  ST.f.shootSpot=spotStr(sp);draft();render()},
+ spotClear(){ST.f.shootSpot='';draft();render()},
  cnt(b,d){const f=ST.f;f[d.k]=Math.max(0,(f[d.k]===''?0:num(f[d.k]))+num(d.d));draft();render()},
  pickOpen(){if(!ST.f.origin)return;S.pick=true;ui.pq='';render();const i=$app.querySelector('[data-u="pq"]');if(i)i.focus()},
  pickClose(){S.pick=false;render()},
@@ -488,7 +541,9 @@ const ACT={
 /* ===== eventos da interface ===== */
 $app.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||!$app.contains(b)||b.disabled)return;const a=ACT[b.dataset.act];if(a)a(b,b.dataset,e)});
 $app.addEventListener('input',e=>{const t=e.target;
- if(t.dataset.m){ST[t.dataset.m][t.dataset.k]=t.value;draft();if(t.dataset.re)render();
+ if(t.dataset.m){
+  if(t.dataset.k==='placarAlianca'){const v=t.value.replace(/\D/g,'').slice(0,3);if(v!==t.value)t.value=v}
+  ST[t.dataset.m][t.dataset.k]=t.value;draft();if(t.dataset.re)render();
   const fl=t.closest('.fld.miss');if(fl&&!isMiss(fl.dataset.f)){fl.classList.remove('miss');const n=fl.querySelector('.need');if(n)n.remove();pendRender=true}
   return}
  if(t.dataset.u){ui[t.dataset.u]=t.value;if(t.dataset.re)render()}});

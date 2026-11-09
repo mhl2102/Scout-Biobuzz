@@ -10,19 +10,23 @@ function colNum(s) { let n = 0; for (const ch of s) n = n * 26 + ch.charCodeAt(0
 function chain(obj) { return new Proxy(obj, { get(t, p) { if (p in t) return t[p]; return () => chain(t); } }); }
 
 class Sheet {
-  constructor(name) { this.name = name; this.grid = {}; this.maxRows = 1000; this.prot = null; this.charts = []; }
+  constructor(name) { this.name = name; this.grid = {}; this.maxRows = 1000; this.maxCols = 26; this.prot = null; this.charts = []; }
   getName() { return this.name; }
   getMaxRows() { return this.maxRows; }
   insertRowsAfter(_, n) { this.maxRows += n; }
+  getMaxColumns() { return this.maxCols; }
+  insertColumnsAfter(_, n) { this.maxCols += n; }
   getLastRow() { let m = 0; for (const k in this.grid) { const r = +k.split(',')[0]; if (this.grid[k] !== '' && r > m) m = r; } return m; }
   getRange(a, c, nr, nc) {
     if (typeof a === 'string') {
       const m = a.match(/^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/); if (!m) throw new Error('A1 inválido ' + a);
       const c1 = colNum(m[1]), r1 = m[2] ? +m[2] : 1, c2 = m[3] ? colNum(m[3]) : c1, r2 = m[4] ? +m[4] : (m[3] || !m[2] ? this.maxRows : r1);
+      if (c2 > this.maxCols) throw new Error('Range além da última coluna ' + a);
       return new Range(this, r1, c1, r2 - r1 + 1, c2 - c1 + 1);
     }
     if (a < 1 || c < 1) throw new Error('getRange fora');
     if (a + (nr || 1) - 1 > this.maxRows) throw new Error('Range além do fim da aba');
+    if (c + (nc || 1) - 1 > this.maxCols) throw new Error('Range além da última coluna');
     return new Range(this, a, c, nr || 1, nc || 1);
   }
   setFrozenRows() {} clear() { this.grid = {}; } autoResizeColumns() {} setColumnWidth() {} hideSheet() { this.hidden = true; }
@@ -102,10 +106,18 @@ assert.strictEqual(ev.events.length, 2); assert.strictEqual(ev.events[1].teams[0
 
 // 3. doPost
 props.SCOUT_KEY = 'senha-de-teste';
-const base = { id: 'abc123def', criadoEm: new Date().toISOString(), scouter: 'Ana', match: 3, team: 1002, origin: 'Evento teste', type: 'Qualificatória', alliance: 'Azul', aStart: 'HIVE alta', aHas: 'Sim', aLeave: 'Sim', aPark: 'Não', aCollect: 'Chão', aAcc: 'Média', aBalls: 4, aTips: 1, tBalls: 10, tTips: 2, tGarden: 3, tFlower: 'Não', tPark: 'Sim', tBroke: 'Não', tAcc: 'Alta', shootSpeed: 'Rápido', robotSpeed: 'Médio', shootSpot: 'perto da HIVE', notes: '=HYPERLINK("x")' };
+const base = { placarAlianca: 87, id: 'abc123def', criadoEm: new Date().toISOString(), scouter: 'Ana', match: 3, team: 1002, origin: 'Evento teste', type: 'Qualificatória', alliance: 'Azul', aStart: 'HIVE alta', aHas: 'Sim', aLeave: 'Sim', aPark: 'Não', aCollect: 'Chão', aAcc: 'Média', aBalls: 4, aTips: 1, tBalls: 10, tTips: 2, tGarden: 3, tFlower: 'Não', tPark: 'Sim', tBroke: 'Não', tAcc: 'Alta', shootSpeed: 'Rápido', robotSpeed: 'Médio', shootSpot: 'D4;C3*;b2', notes: '=HYPERLINK("x")' };
 const P = books[idT].getSheetByName('Partidas');
 assert.strictEqual(post({ key: 'errada', row: base }).error, 'bad_key');
 assert.strictEqual(post('{não é json').error, 'bad_row');
+// conferência da senha na primeira tela
+assert.deepStrictEqual(post({ key: 'senha-de-teste', action: 'auth' }), { ok: true, auth: true });
+assert.strictEqual(post({ key: 'errada', action: 'auth' }).error, 'bad_key');
+assert.strictEqual(post({ key: 'senha-de-teste' }).error, 'bad_row', 'senha certa sem linha = bad_row');
+assert.strictEqual(P.getRange(2, 1).getValues()[0][0], '', 'auth não grava nada');
+// mapa de tiro e placar fora do formato
+for (const sp of ['perto da HIVE', 'C3*;D4*', 'G1', 'C7', 'C3;;D4', '', '=C3']) assert.strictEqual(post({ key: 'senha-de-teste', row: Object.assign({}, base, { shootSpot: sp }) }).error, 'bad_row', 'shootSpot ' + sp);
+for (const pl of [-1, 1000, 2.5, 'abc']) assert.strictEqual(post({ key: 'senha-de-teste', row: Object.assign({}, base, { placarAlianca: pl }) }).error, 'bad_row', 'placar ' + pl);
 assert.strictEqual(post({ key: 'senha-de-teste', row: Object.assign({}, base, { team: 9999 }) }).error, 'bad_team');
 assert.strictEqual(post({ key: 'senha-de-teste', row: Object.assign({}, base, { origin: 'Outro' }) }).error, 'bad_event');
 assert.strictEqual(post({ key: 'senha-de-teste', row: Object.assign({}, base, { tAcc: '' }) }).error, 'bad_row');
@@ -114,9 +126,14 @@ let r = post({ key: 'senha-de-teste', row: base });
 assert.deepStrictEqual([r.ok, r.status, r.dup], [true, 'created', null]);
 assert.strictEqual(P.getRange(2, 1).getValues()[0][0], 'abc123def');
 assert.strictEqual(P.getRange(2, 28).getValues()[0][0], "'=HYPERLINK(\"x\")", 'texto com = escapado');
-r = post({ key: 'senha-de-teste', row: Object.assign({}, base, { tBalls: 12 }) });
+assert.strictEqual(P.getRange(2, 27).getValues()[0][0], 'C3*;B2;D4', 'mapa normalizado: principal primeiro, resto em ordem');
+assert.strictEqual(P.getRange(2, 29).getValues()[0][0], '', 'AC (fórmula) não recebe valor');
+assert.strictEqual(P.getRange(2, 30).getValues()[0][0], 87, 'placar em AD');
+assert.strictEqual(P.getRange(1, 30).getValues()[0][0], 'placarAlianca', 'cabeçalho AD1');
+r = post({ key: 'senha-de-teste', row: Object.assign({}, base, { tBalls: 12, placarAlianca: '' }) });
 assert.strictEqual(r.status, 'updated');
 assert.strictEqual(P.getRange(2, 18).getValues()[0][0], 12);
+assert.strictEqual(P.getRange(2, 30).getValues()[0][0], '', 'placar opcional, apagado na atualização');
 assert.strictEqual(P.getRange(3, 1).getValues()[0][0], '', 'reenvio não duplica');
 r = post({ key: 'senha-de-teste', row: Object.assign({}, base, { id: 'outro0001', scouter: 'Bia' }) });
 assert.strictEqual(r.status, 'created'); assert.strictEqual(r.dup.scouter, 'Ana', 'aviso de duplicata');
@@ -132,5 +149,13 @@ lockFree = false; assert.strictEqual(post({ key: 'senha-de-teste', row: Object.a
 // limpeza do teste
 G.limparEventoTeste();
 assert.strictEqual(P.getRange('A2:A600').getValues().filter(x => x[0] !== '').length, 0);
+assert.strictEqual(P.getRange('AD2:AD600').getValues().filter(x => x[0] !== '').length, 0, 'limpeza apaga o placar');
 assert.strictEqual(books[idS].getSheetByName('Partidas').getRange('A2:A50').getValues().filter(x => x[0] !== '').length, 0, 'seletiva intocada');
 console.log('doGet/doPost ok');
+// setup() não mexe numa planilha que já tem o layout completo
+const T = books[idT];
+T.insertSheet('_calcCmp', 0);
+T.getSheetByName('Config').getRange('A10').setValue('marca');
+G.setup();
+assert.strictEqual(T.getSheetByName('Config').getRange('A10').getValues()[0][0], 'marca', 'setup pulou a planilha com _calcCmp');
+console.log('setup protege o layout completo ok');
